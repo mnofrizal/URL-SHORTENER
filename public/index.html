@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Shortener</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f4f4f4;
+        }
+        .container {
+            text-align: center;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            width: 400px;
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            padding: 10px;
+            width: 100%;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            background-color: #007bff;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .short-url {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+        .click-info, .history-info {
+            margin-top: 10px;
+            font-size: 16px;
+        }
+        .history-list {
+            margin-top: 10px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>URL Shortener</h1>
+        <input type="text" id="originalUrl" placeholder="Enter your URL here..." />
+        <button onclick="shortenUrl()">Shorten URL</button>
+        <div class="short-url" id="shortUrlContainer"></div>
+        <div class="click-info" id="clickInfoContainer"></div>
+    </div>
+
+    <div class="container">
+        <h1>Check Click History</h1>
+        <input type="text" id="urlCode" placeholder="Enter short URL code..." />
+        <button onclick="checkHistory()">Check History</button>
+        <div class="history-info">
+            <h3>Click History:</h3>
+            <ul id="historyList"></ul>
+        </div>
+    </div>
+
+    <script>
+        async function shortenUrl() {
+            const originalUrl = document.getElementById('originalUrl').value;
+            const response = await fetch('http://localhost:5000/api/url/shorten', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ originalUrl })
+            });
+
+            const data = await response.json();
+            const shortUrlContainer = document.getElementById('shortUrlContainer');
+            const clickInfoContainer = document.getElementById('clickInfoContainer');
+            const historyList = document.getElementById('historyList');
+
+            if (response.ok) {
+                shortUrlContainer.innerHTML = `<a href="${data.shortUrl}" target="_blank">${data.shortUrl}</a>`;
+                clickInfoContainer.innerHTML = `Total Clicks: ${data.clicks}`;
+                historyList.innerHTML = ''; // Clear history list when new URL is shortened
+            } else {
+                shortUrlContainer.innerHTML = `<span style="color: red;">${data}</span>`;
+            }
+        }
+
+        async function checkHistory() {
+        let urlCode = document.getElementById('urlCode').value.trim();
+
+        // Jika input adalah full URL, ekstrak kode URL dari URL tersebut
+        if (urlCode.startsWith('http')) {
+            try {
+                const url = new URL(urlCode);
+                urlCode = url.pathname.substring(1); // Mengambil bagian setelah '/'
+            } catch (e) {
+                alert('Invalid URL format');
+                return;
+            }
+        }
+
+        if (!urlCode) {
+            alert('Please enter a valid URL code or full URL');
+            return;
+        }
+
+        const response = await fetch(`http://localhost:5000/api/url/${urlCode}/history`);
+        const history = await response.json();
+        const historyList = document.getElementById('historyList');
+
+        historyList.innerHTML = ''; // Clear existing history
+
+        if (response.ok && history.length > 0) {
+            history.forEach((click) => {
+                const listItem = document.createElement('li');
+                listItem.textContent = `Clicked at: ${new Date(click.clickedAt).toLocaleString()}`;
+                historyList.appendChild(listItem);
+            });
+        } else {
+            historyList.innerHTML = '<li>No history found for this code.</li>';
+        }
+    }
+    </script>
+</body>
+</html>

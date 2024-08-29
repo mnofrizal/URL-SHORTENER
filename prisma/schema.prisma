@@ -1,0 +1,28 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Url {
+  id            Int            @id @default(autoincrement())
+  originalUrl   String
+  shortUrl      String         @unique
+  clicks        Int            @default(0)
+  createdAt     DateTime       @default(now())
+  lastClickAt   DateTime?
+  name          String? // Tambahkan kolom name sebagai opsional
+  clicksHistory ClickHistory[]
+}
+
+model ClickHistory {
+  id         Int      @id @default(autoincrement())
+  urlId      Int
+  clickedAt  DateTime @default(now())
+  userAgent  String?
+  deviceType String?
+  url        Url      @relation(fields: [urlId], references: [id], onDelete: Cascade) // Letakkan onDelete: Cascade di sini
+}

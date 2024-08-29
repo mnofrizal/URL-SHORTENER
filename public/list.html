@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL List</title>
+    <script src="https://cdn.jsdelivr.net/npm/qr-code-styling/lib/qr-code-styling.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+
+        h1 {
+            text-align: center;
+            color: #007bff;
+            margin-bottom: 20px;
+        }
+
+        #uploadForm {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        #fileInput {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+
+        #uploadButton, #exportButton, #bulkDownloadButton {
+            padding: 10px 20px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        #uploadButton:hover, #exportButton:hover, #bulkDownloadButton:hover {
+            background-color: #218838;
+        }
+
+        #bulkDownloadButton.loading {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: #fff;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        table th, table td {
+            padding: 15px;
+            text-align: left;
+        }
+
+        table th {
+            background-color: #007bff;
+            color: white;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        table tr {
+            border-bottom: 1px solid #ddd;
+        }
+
+        table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        table tr:hover {
+            background-color: #f1f1f1;
+        }
+
+        .deleteButton {
+            padding: 7px 15px;
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .deleteButton:hover {
+            background-color: #c82333;
+        }
+
+        .qrButton, .downloadButton {
+            padding: 7px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            margin-right: 5px;
+        }
+
+        .qrButton:hover, .downloadButton:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>List of Shortened URLs</h1>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" id="fileInput" name="file" accept=".xlsx, .xls">
+        <button type="button" id="uploadButton" onclick="uploadExcel()">Upload Excel</button>
+        <button type="button" id="exportButton" onclick="exportToExcel()">Export to Excel</button>
+        <button type="button" id="bulkDownloadButton" onclick="bulkDownloadQr()">Bulk Download QR Codes</button>
+    </form>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Nama</th>
+                <th>Original URL</th>
+                <th>Short URL</th>
+                <th>Clicks</th>
+                <th>Created At</th>
+                <th>Last Click</th>
+                <th>QR Code</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="urlTableBody">
+            <!-- Data akan dimuat di sini -->
+        </tbody>
+    </table>
+
+    <script>
+        async function fetchUrls() {
+            try {
+                const response = await fetch('/api/urls');
+                const urls = await response.json();
+                return urls;
+            } catch (error) {
+                console.error('Error fetching URLs:', error);
+                return [];
+            }
+        }
+
+        function getFileName(name, id) {
+            return name.toLowerCase().replace(/\s+/g, '_');
+        }
+
+        async function bulkDownloadQr() {
+    const bulkDownloadButton = document.getElementById('bulkDownloadButton');
+    bulkDownloadButton.classList.add('loading');
+    bulkDownloadButton.disabled = true;
+    bulkDownloadButton.textContent = 'Downloading...';
+
+    const urls = await fetchUrls();
+    if (urls.length === 0) {
+        alert('No URLs found for downloading QR codes.');
+        bulkDownloadButton.classList.remove('loading');
+        bulkDownloadButton.disabled = false;
+        bulkDownloadButton.textContent = 'Bulk Download QR Codes';
+        return;
+    }
+
+    const zip = new JSZip();
+    const fileNames = {};
+
+    const promises = urls.map(async (url) => {
+        const originalName = getFileName(url.name || 'noname', url.id);
+        let fileName = originalName;
+        let count = 1;
+
+        while (fileNames[fileName]) {
+            fileName = `${originalName}_${count}`;
+            count++;
+        }
+
+        fileNames[fileName] = true;
+
+        const qrData = await generateQrCode(url);
+        zip.file(`${fileName}.png`, qrData.blob);
+    });
+
+    await Promise.all(promises);
+
+    zip.generateAsync({ type: "blob" }).then((content) => {
+        saveAs(content, "qrcodes.zip");
+    });
+
+    bulkDownloadButton.classList.remove('loading');
+    bulkDownloadButton.disabled = false;
+    bulkDownloadButton.textContent = 'Bulk Download QR Codes';
+}
+
+        function generateQrCode(data) {
+            return new Promise((resolve) => {
+                const qrCode = new QRCodeStyling({
+                    width: 500,
+                    height: 500,
+                    data: data.shortUrl,
+                    dotsOptions: {
+                        color: "#000",
+                        type: "rounded"
+                    },
+                    backgroundOptions: {
+                        color: "#fff",
+                    },
+                    cornersSquareOptions: {
+                        color: "#000",
+                        type: "rounded"
+                    }
+                });
+
+                qrCode.getRawData("png").then((blob) => {
+                    resolve({ name: getFileName(data.name || 'noname', data.id), blob: blob });
+                });
+            });
+        }
+
+        async function fetchAndRenderUrls() {
+            const urls = await fetchUrls();
+            const tableBody = document.getElementById('urlTableBody');
+            tableBody.innerHTML = ''; // Clear table
+
+            urls.forEach(url => {
+                const row = document.createElement('tr');
+
+                row.innerHTML = `
+                    <td>${url.id}</td>
+                    <td>${url.name || 'noname'}</td>
+                    <td><a href="${url.originalUrl}" target="_blank">${url.originalUrl}</a></td>
+                    <td><a href="${url.shortUrl}" target="_blank">${url.shortUrl}</a></td>
+                    <td>${url.clicks}</td>
+                    <td>${new Date(url.createdAt).toLocaleString()}</td>
+                    <td>${url.lastClickAt ? new Date(url.lastClickAt).toLocaleString() : 'Never'}</td>
+                `;
+
+                const qrCodeContainer = document.createElement('div');
+                const qrCode = new QRCodeStyling({
+                    width: 400,
+                    height: 400,
+                    data: url.shortUrl,
+                    dotsOptions: {
+                        color: "#000",
+                        type: "rounded"
+                    },
+                    backgroundOptions: {
+                        color: "#fff",
+                    },
+                    cornersSquareOptions: {
+                        color: "#000",
+                        type: "extra-rounded"
+                    }
+                });
+
+                const canvas = document.createElement("canvas");
+                qrCode.append(canvas);
+                const qrCodeCell = document.createElement('td');
+
+                const qrCodeButton = document.createElement('button');
+                qrCodeButton.classList.add('qrButton');
+                qrCodeButton.textContent = 'Download QR';
+                qrCodeButton.onclick = () => {
+                    qrCode.download({ name: getFileName(url.name || 'noname', url.id), extension: 'png' });
+                };
+                qrCodeCell.appendChild(qrCodeButton);
+
+                const openQrButton = document.createElement('button');
+                openQrButton.classList.add('qrButton');
+                openQrButton.textContent = 'Open QR';
+                openQrButton.onclick = () => {
+                    qrCode.getRawData("png").then(blob => {
+                        const qrCodeUrl = URL.createObjectURL(blob);
+                        const newWindow = window.open();
+                        newWindow.document.write(`
+                            <html>
+                                <head><title>QR Code</title></head>
+                                <body>
+                                    <h1>QR Code</h1>
+                                    <img src="${qrCodeUrl}" alt="QR Code" style="max-width: 100%; height: auto;" />
+                                    <br>
+                                    <button onclick="window.close()">Close</button>
+                                </body>
+                            </html>
+                        `);
+                    });
+                };
+                qrCodeCell.appendChild(openQrButton);
+                row.appendChild(qrCodeCell);
+
+                const actionCell = document.createElement('td');
+
+                // Tambahkan tombol delete
+                const deleteButton = document.createElement('button');
+                deleteButton.classList.add('deleteButton');
+                deleteButton.textContent = 'Delete';
+                deleteButton.onclick = () => deleteUrl(url.id);
+                actionCell.appendChild(deleteButton);
+
+                row.appendChild(actionCell);
+                tableBody.appendChild(row);
+            });
+        }
+
+        async function uploadExcel() {
+            const fileInput = document.getElementById('fileInput');
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                const response = await fetch('/api/upload-excel', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (response.ok) {
+                    alert('File uploaded successfully!');
+                    fetchAndRenderUrls(); // Refresh URL list after upload
+                } else {
+                    alert('Failed to upload file.');
+                }
+            } catch (error) {
+                console.error('Error uploading file:', error);
+            }
+        }
+
+        async function exportToExcel() {
+            try {
+                const response = await fetch('/api/export-excel');
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'shortened_urls.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                } else {
+                    alert('Failed to export data.');
+                }
+            } catch (error) {
+                console.error('Error exporting data:', error);
+            }
+        }
+
+        async function deleteUrl(id) {
+            if (confirm('Are you sure you want to delete this URL?')) {
+                try {
+                    const response = await fetch(`/api/url/${id}`, {
+                        method: 'DELETE',
+                    });
+
+                    if (response.ok) {
+                        alert('URL deleted successfully!');
+                        fetchAndRenderUrls(); // Refresh the list after deletion
+                    } else {
+                        alert('Failed to delete URL.');
+                    }
+                } catch (error) {
+                    console.error('Error deleting URL:', error);
+                }
+            }
+        }
+
+        // Load URLs when page loads
+        document.addEventListener('DOMContentLoaded', fetchAndRenderUrls);
+    </script>
+</body>
+</html>
